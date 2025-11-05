@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>웹소설 집필 스튜디오</title>
+<style>
+  :root {
+    --bg-app: #000;
+    --bg-phone: #111;
+    --text-main: #aaaaaa;
+    --text-dim: #888;
+    --box-radius: 18px;
+    --phone-width: 390px;
+    --phone-height: 844px;
+    --font-body: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+                "Noto Sans KR", "Apple Gothic", "Malgun Gothic", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg-app); color: var(--text-main); font-family: var(--font-body); min-height: 100vh; overflow: hidden; transition: background-color .3s ease, color .3s ease; }
+
+  /* 중앙 상단 툴바 (폰트 크기) */
+  .preview-toolbar-center {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 5;
+  }
+  .font-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    padding: 6px 8px;
+    border: 1px dashed #444;
+    border-radius: 10px;
+  }
+
+  /* 레이아웃: 미리보기(좌) / 에디터+에피소드(우) */
+  .layout { display: grid; grid-template-columns: calc(var(--phone-width) + 48px) 1fr; width: 100%; height: 100vh; }
+
+  /* 좌: 프리뷰 */
+  .preview-pane { padding: 24px; border-right: 1px solid #222; display: flex; align-items: center; justify-content: center; position: relative; }
+  .phone-frame { width: var(--phone-width); max-width: var(--phone-width); height: calc(var(--phone-height) * 0.9); max-height: calc(var(--phone-height) * 0.9); background: var(--bg-phone); border: 2px solid #333; border-radius: var(--box-radius); box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 60px rgba(255,255,255,0.05) inset; display: flex; flex-direction: column; overflow: hidden; }
+  /* ↓ 미리보기(폰)만 라이트 테마 변수 재정의 */
+  .phone-frame.theme-light {
+    --bg-phone: #e0e0e0;
+    --text-main: #222222;
+    --text-dim:  #666666;
+    border-color: #ddd;
+    transition: background-color .25s ease, color .25s ease, border-color .25s ease;
+  }
+
+  /* 라이트 테마일 때 하단 바/버튼 톤 */
+  .phone-frame.theme-light .phone-system-bar { 
+    background: #f6f7f8; 
+    border-top-color: #e5e7eb; 
+  }
+  .phone-frame.theme-light .sys-btn {
+    background: #fff; 
+    color: #222; 
+    border-color: #ddd;
+  }
+
+  /* 스크롤바도 폰 안에서만 밝게 */
+  .phone-frame.theme-light .phone-content::-webkit-scrollbar-thumb { background: #bbb; }
+  .phone-frame.theme-light .phone-content::-webkit-scrollbar-track { background: #eee; }
+
+  .phone-header { flex-shrink: 0; padding: 12px 16px; border-bottom: 1px solid #222; display: flex; align-items: center; }
+  .preview-title { font-size: 15px; font-weight: 600; line-height: 1.4; }
+  .phone-content { flex: 1; overflow: auto; padding: 20px 24px 20px; } /* bottom padding leaves room for system bar */
+  .novel-text { font-size: var(--preview-font-size, 21px); line-height: 1.45; color: var(--text-main); white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; letter-spacing: 0.02em; }
+
+  /* 우: 에디터+에피소드 */
+  .right-pane { display: grid; grid-template-columns: 1fr 320px; height: 100vh; }
+
+  /* 에디터 */
+  .editor { display: flex; flex-direction: column; border-bottom: 1px solid #222; }
+  .editor-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #222; }
+  .editor-title { background: transparent; border: none; color: var(--text-main); font-family: var(--font-body); font-size: 16px; font-weight: 600; outline: none; padding: 0; line-height: 1.4; width: 100%; }
+  .editor-meta { margin-top: 6px; font-size: 12px; color: var(--text-dim); display: flex; gap: 10px; }
+  .editor-body { flex: 1; display: flex; }
+  .editor-textarea { flex: 1; width: 100%; background: #000; color: var(--text-main); border: none; outline: none; resize: none; padding: 20px; font-family: var(--font-body); font-size: 20px; line-height: 1.45; letter-spacing: 0.02em; white-space: pre-wrap; }
+
+  /* 에피소드 패널 */
+  .episodes { border-left: 1px solid #222; display: flex; flex-direction: column; }
+  .episodes-header { padding: 14px; border-bottom: 1px solid #222; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .episodes-list { flex: 1; overflow: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .ep-item { padding: 10px; border: 1px solid #333; border-radius: 10px; cursor: pointer; }
+  .ep-item.active { border-color: #2b7cff; background: #0b1220; }
+  .ep-title { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ep-actions { margin-top: 8px; display: flex; gap: 6px; }
+
+  /* 버튼/폼 */
+  .btn { background: #000; color: var(--text-main); border: 1px solid #444; border-radius: 8px; font-size: 12px; padding: 6px 10px; cursor: pointer; }
+  .btn.primary { background: #2b7cff; border-color: #2b7cff; color: #fff; }
+  .btn.danger { background: #ff3b30; border-color: #ff3b30; color: #fff; }
+  .btn:active { background: #111; }
+  .btn.small { padding: 4px 6px; font-size: 11px; }
+
+  /* 스크롤바 */
+  .phone-content::-webkit-scrollbar, .editor-textarea::-webkit-scrollbar, .episodes-list::-webkit-scrollbar { width: 6px; }
+  .phone-content::-webkit-scrollbar-thumb, .editor-textarea::-webkit-scrollbar-thumb, .episodes-list::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  .phone-content::-webkit-scrollbar-track, .editor-textarea::-webkit-scrollbar-track, .episodes-list::-webkit-scrollbar-track { background: #000; }
+
+  /* System bar at the bottom (back/home/menu area) */
+  .phone-system-bar { height: 60px; border-top: 1px solid #222; background: #080808; display: flex; align-items: center; justify-content: center; padding: 0 12px; gap: 12px; }
+  .sys-dot { width: 8px; height: 8px; background: #444; border-radius: 999px; display: inline-block; }
+  .sys-btn { background: #000; color: var(--text-main); border: 1px solid #444; border-radius: 8px; font-size: 12px; padding: 6px 20px; cursor: pointer; user-select: none; }
+  .sys-btn:active { background: #111; }
+
+  /* Toggle UI outside phone (top-right) */
+  .preview-toolbar { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; z-index: 5; }
+  .preview-toolbar-left { position: absolute; top: 12px; left: 12px; display: flex; gap: 8px; z-index: 5; }
+  .toggle-btn { background: #000; color: var(--text-main); border: 1px solid #444; border-radius: 10px; padding: 6px 10px; font-size: 12px; cursor: pointer; transition: background-color .2s ease, border-color .2s ease, color .2s ease; }
+  .theme-light .toggle-btn { background: #fff; border-color: #ddd; }
+  .toggle-btn:active { background: #111; }
+
+  /* Gentle background breathing (very subtle) */
+  @media (prefers-reduced-motion: no-preference) {
+    body::before {
+      content: ""; position: fixed; inset: 0; pointer-events: none; z-index: -1;
+      background: radial-gradient(1200px 600px at 20% 10%, rgba(255,255,255,0.03), transparent),
+                  radial-gradient(800px 400px at 80% 80%, rgba(255,255,255,0.02), transparent);
+      opacity: 1; animation: calmShift 20s ease-in-out infinite alternate;
+    }
+    .theme-light body::before { background: radial-gradient(1200px 600px at 20% 10%, rgba(0,0,0,0.03), transparent), radial-gradient(800px 400px at 80% 80%, rgba(0,0,0,0.02), transparent); }
+    @keyframes calmShift { from { transform: translateY(0); } to { transform: translateY(6px); } }
+  }
+  .toggle-btn { background: #000; color: var(--text-main); border: 1px solid #444; border-radius: 10px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
+  .toggle-btn:active { background: #111; }
+
+  @media (max-width: 1100px) {
+    .layout { grid-template-columns: 1fr; }
+    .preview-pane { height: 50vh; border-right: none; border-bottom: 1px solid #222; }
+    .right-pane { grid-template-columns: 1fr; height: auto; }
+    .episodes { border-left: none; border-top: 1px solid #222; }
+    .preview-pane { height: 50vh; border-right: none; border-bottom: 1px solid #222; }
+    .right-pane { grid-template-columns: 1fr; height: auto; }
+    .episodes { border-left: none; border-top: 1px solid #222; }
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- 좌: 프리뷰 -->
+  <section class="preview-pane">
+    <div class="preview-toolbar-left">
+      <button id="themeToggle" class="toggle-btn" title="테마 전환">라이트</button>
+    </div>
+    <div class="preview-toolbar-center">
+    <button id="fontDecBtn" class="toggle-btn" title="폰트 작게">A-</button>
+    <span id="fontLabel" class="font-label">21px</span>
+    <button id="fontIncBtn" class="toggle-btn" title="폰트 크게">A+</button>
+  </div>
+    <div class="preview-toolbar">
+      <button id="modeToggle" class="toggle-btn" title="페이지/스크롤 전환">페이지</button>
+    </div>
+    <div class="phone-frame">
+      <header class="phone-header">
+        <div class="preview-title" id="previewTitle">(제목 없음)</div>
+      </header>
+      <main class="phone-content">
+        <div class="novel-text" id="previewBody">여기에 작성한 본문이 실시간으로 표시됩니다.</div>
+      </main>
+      <div class="phone-system-bar">
+        <div id="sysbarContent">
+          <span class="sys-dot"></span>
+          <span class="sys-dot"></span>
+          <span class="sys-dot"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 우: 에디터 + 에피소드 -->
+  <section class="right-pane">
+    <!-- 에디터 -->
+    <div class="editor">
+      <div class="editor-header">
+        <div style="flex:1">
+          <input id="titleInput" class="editor-title" placeholder="에피소드 제목" />
+          <div class="editor-meta">
+            <span id="charCount">0자</span>
+            <span>·</span>
+            <span id="saveStatus">저장 대기</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button id="exportCurrentBtn" class="btn">현재 Export</button>
+          <button id="exportAllBtn" class="btn">전체 Export</button>
+        </div>
+      </div>
+      <div class="editor-body">
+        <textarea id="bodyInput" class="editor-textarea" placeholder="여기에 본문을 작성하세요."></textarea>
+      </div>
+    </div>
+
+    <!-- 에피소드 목록 -->
+    <aside class="episodes">
+      <div class="episodes-header">
+        <button id="newEpBtn" class="btn primary">+ 새 에피소드</button>
+      </div>
+      <div id="epList" class="episodes-list"></div>
+    </aside>
+  </section>
+</div>
+
+<script>
+  // ======= 저장 스키마 =======
+  const PREFIX = 'wne:';
+  const META_KEY = PREFIX + 'meta';
+  const LIST_KEY = PREFIX + 'episodes';
+  const K = (id, f) => `${PREFIX}ep:${id}:${f}`;
+
+  // ======= 상태/요소 =======
+  const titleInput = document.getElementById('titleInput');
+  const bodyInput = document.getElementById('bodyInput');
+  const previewTitle = document.getElementById('previewTitle');
+  const previewBody = document.getElementById('previewBody');
+  const charCountEl = document.getElementById('charCount');
+  const saveStatus = document.getElementById('saveStatus');
+  const epListEl = document.getElementById('epList');
+  const newEpBtn = document.getElementById('newEpBtn');
+  const exportCurrentBtn = document.getElementById('exportCurrentBtn');
+  const exportAllBtn = document.getElementById('exportAllBtn');
+  const modeToggleBtn = document.getElementById('modeToggle');
+  const phoneFrame = document.querySelector('.phone-frame');
+  const themeToggleBtn = document.getElementById('themeToggle');
+  const sysbarContent = document.getElementById('sysbarContent');
+  const phoneContent = document.querySelector('.phone-content');
+  const fontDecBtn = document.getElementById('fontDecBtn');
+  const fontIncBtn = document.getElementById('fontIncBtn');
+  const fontLabel  = document.getElementById('fontLabel');
+  const previewBodyEl = previewBody; // alias for clarity
+
+  // 읽기 모드: 'page' | 'scroll' (기본: page)
+  let readMode = 'page';
+  let pages = [''];
+  let currentPageIndex = 0;
+
+  let meta = loadJSON(META_KEY) || { schema: 1, currentId: null, lastOpenedAt: null };
+  let episodes = loadJSON(LIST_KEY) || []; // array of ids
+  let currentId = meta.currentId;
+  let dirty = false;
+  let autosaveTimer = null;
+
+  // ====== 폰트 크기 =========
+  const FONT_KEY = PREFIX + 'previewFontPx';
+  let previewFontPx = parseInt(localStorage.getItem(FONT_KEY) || '21', 10);
+  const FONT_MIN = 14, FONT_MAX = 28, FONT_STEP = 1;
+
+  // ======= 측정용 레이아웃 박스(measurer) =======
+  let measurer = null;
+  let pageHeightPx = 0;
+  let contentWidthPx = 0;
+
+  function setupMeasurer(){
+    if(!measurer){
+      measurer = document.createElement('div');
+      measurer.id = 'layoutMeasurer';
+      measurer.className = 'novel-text'; // 폰 본문과 동일 타이포
+      Object.assign(measurer.style, {
+        position: 'absolute', left: '-9999px', top: '0',
+        visibility: 'hidden', whiteSpace: 'pre-wrap', wordBreak: 'keep-all',
+        overflow: 'hidden', overflowWrap: 'anywhere'
+      });
+      document.body.appendChild(measurer);
+    }
+    updateMeasurerDimensions();
+  }
+
+  function updateMeasurerDimensions(){
+    const cs = getComputedStyle(phoneContent);
+    const padL = parseFloat(cs.paddingLeft)||0; const padR = parseFloat(cs.paddingRight)||0;
+    const padT = parseFloat(cs.paddingTop)||0; const padB = parseFloat(cs.paddingBottom)||0;
+    contentWidthPx = Math.max(0, phoneContent.clientWidth - padL - padR);
+    pageHeightPx  = Math.max(0, phoneContent.clientHeight - padT - padB);
+    measurer.style.width = contentWidthPx + 'px';
+    // 높이는 고정하지 않고 scrollHeight로 판정
+  }
+
+  // ======= 유틸 =======
+  function escapeHTML(str){
+    return (str||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;' }[m]));
+  }
+
+  // In scroll mode, render with a hidden anchor at caret and scroll to ~2/3 viewport height
+  function updateScrollPreviewToCaret(){
+    const text = bodyInput.value || '';
+    const caret = bodyInput.selectionStart || 0;
+    const before = text.slice(0, caret);
+    const after  = text.slice(caret);
+    // Inject an inline anchor span where the caret is
+    const html = `${escapeHTML(before)}<span id="caretAnchor" style="display:inline-block;width:1px;height:1em;vertical-align:baseline;"></span>${escapeHTML(after)}`;
+    previewBodyEl.innerHTML = html;
+    // After DOM paints, adjust scroll so anchor is ~2/3 down
+    requestAnimationFrame(()=>{
+      const anchor = document.getElementById('caretAnchor');
+      if(!anchor) return;
+      const desired = Math.max(0, anchor.offsetTop - Math.floor(phoneContent.clientHeight * 2/3));
+      const maxScroll = Math.max(0, phoneContent.scrollHeight - phoneContent.clientHeight);
+      phoneContent.scrollTop = Math.min(maxScroll, desired);
+    });
+  }
+
+  // ======= 유틸 =======
+  function loadJSON(key) { try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : null; } catch(e){ return null; } }
+  function saveJSON(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
+  function nowISO(){ return new Date().toISOString(); }
+  function nameSafe(s){ return (s||'untitled').replace(/[\/:*?"<>|]/g,'_'); }
+
+  // 실제 레이아웃 높이 기준 페이지 분할
+  function paginateByLayout(fullText){
+    const out = [];
+    let start = 0; const n = fullText.length;
+    if(n === 0){ out.push(''); return out; }
+
+    while(start < n){
+      let low = 1, high = n - start, fit = 1;
+      while(low <= high){
+        const mid = (low + high) >> 1;
+        measurer.textContent = fullText.slice(start, start + mid);
+        const h = measurer.scrollHeight;
+        if(h <= pageHeightPx){ fit = mid; low = mid + 1; }
+        else { high = mid - 1; }
+      }
+      let end = start + fit;
+      // 경계 부드럽게(문단/공백/문장부호)
+      const b = nearestBoundary(fullText, start, end);
+      if(b) end = b;
+      out.push(fullText.slice(start, end));
+      start = end;
+    }
+    if(out.length === 0) out.push('');
+    return out;
+  }
+
+  function nearestBoundary(text, s, e){
+    for(let i=e; i> s; i--){
+      const ch = text[i-1];
+      if(ch === '' && text[i-2] === '') return i; // 빈 줄 경계
+      if(ch === ' ') return i;                          // 공백 경계
+      if('?!."、,，.,”’』」)）]'.includes(ch)) return i; // 문장부호 근처
+    }
+    return null;
+  }
+
+  function renderPage(){
+    if(!pages || pages.length === 0) pages = [''];
+    if(currentPageIndex < 0) currentPageIndex = 0;
+    if(currentPageIndex >= pages.length) currentPageIndex = pages.length - 1;
+    previewBody.textContent = pages[currentPageIndex] || '';
+    if(readMode === 'page'){
+      sysbarContent.innerHTML = '';
+      const prev = document.createElement('button'); prev.className='sys-btn'; prev.textContent='◀'; prev.addEventListener('click', ()=>{ currentPageIndex=Math.max(0,currentPageIndex-1); renderPage(); });
+      const ind = document.createElement('span');
+      ind.style.color='var(--text-dim)';
+      ind.style.fontSize='16px';
+      ind.style.paddingLeft='10px';
+      ind.style.paddingRight='10px';
+      ind.textContent = `${currentPageIndex+1} / ${pages.length}`;
+      const next = document.createElement('button'); next.className='sys-btn'; next.textContent='▶'; next.addEventListener('click', ()=>{ currentPageIndex=Math.min(pages.length-1,currentPageIndex+1); renderPage(); });
+      sysbarContent.append(prev, ind, next);
+    }
+  }
+
+  function toScrollBar(){
+    sysbarContent.innerHTML = '<span class="sys-dot"></span><span class="sys-dot"></span><span class="sys-dot"></span>';
+  }
+
+  function updateSystemBar(){ if(readMode==='page') renderPage(); else toScrollBar(); }
+
+  function loadEpisode(id){
+    return { id,
+      title: localStorage.getItem(K(id,'title')) || '',
+      body: localStorage.getItem(K(id,'body')) || '',
+      updatedAt: localStorage.getItem(K(id,'updatedAt')) || null };
+  }
+  function saveEpisode(ep){ localStorage.setItem(K(ep.id,'title'), ep.title || ''); localStorage.setItem(K(ep.id,'body'), ep.body || ''); localStorage.setItem(K(ep.id,'updatedAt'), ep.updatedAt || nowISO()); }
+  function deleteEpisode(id){ ['title','body','updatedAt'].forEach(f=> localStorage.removeItem(K(id,f))); }
+
+  function persistMeta(){ meta.currentId = currentId; meta.lastOpenedAt = nowISO(); saveJSON(META_KEY, meta); }
+
+  function ensureFirst(){
+    if(episodes.length===0){
+      const id = Date.now();
+      episodes=[id]; saveJSON(LIST_KEY, episodes);
+      saveEpisode({ id, title:'첫 에피소드', body:'', updatedAt: nowISO() });
+      currentId = id; persistMeta();
+    }
+    if(!currentId || !episodes.includes(currentId)){ currentId = episodes[0]; persistMeta(); }
+  }
+
+  // ======= UI =======
+  function renderEpList(){
+    epListEl.innerHTML = '';
+    episodes.forEach((id)=>{
+      const title = localStorage.getItem(K(id,'title')) || '(제목 없음)';
+      const item = document.createElement('div');
+      item.className = 'ep-item' + (id===currentId ? ' active' : '');
+      item.innerHTML = `
+        <div class="ep-title" title="${title}">${title}</div>
+        <div class="ep-actions">
+          <button class="btn small" data-act="up">▲</button>
+          <button class="btn small" data-act="down">▼</button>
+          <button class="btn small danger" data-act="del">삭제</button>
+        </div>`;
+      item.addEventListener('click', (e)=>{ const act=e.target.getAttribute('data-act'); if(act) return; selectEpisode(id); });
+      item.querySelector('[data-act="up"]').addEventListener('click', (e)=>{ e.stopPropagation(); moveEpisode(id,-1); });
+      item.querySelector('[data-act="down"]').addEventListener('click', (e)=>{ e.stopPropagation(); moveEpisode(id,+1); });
+      item.querySelector('[data-act="del"]').addEventListener('click', (e)=>{ e.stopPropagation(); removeEpisode(id); });
+      epListEl.appendChild(item);
+    });
+  }
+
+  function loadCurrent(){
+    const ep = loadEpisode(currentId);
+    titleInput.value = ep.title || '';
+    bodyInput.value = ep.body || '';
+    previewTitle.textContent = ep.title || '(제목 없음)';
+
+    if(readMode==='page'){
+      pages = paginateByLayout(ep.body);
+      currentPageIndex = 0;
+      renderPage();
+    } else {
+      updateScrollPreviewToCaret();
+    }
+
+    charCountEl.textContent = (ep.body||'').length + '자';
+    saveStatus.textContent = '불러옴 • ' + (ep.updatedAt ? new Date(ep.updatedAt).toLocaleTimeString() : '—');
+    renderEpList();
+    updateSystemBar();
+  }
+
+  function selectEpisode(id){ if(dirty) instantSave(); currentId=id; persistMeta(); loadCurrent(); }
+
+  function addEpisode(){ const id=Date.now(); episodes.push(id); saveJSON(LIST_KEY, episodes); saveEpisode({ id, title:'새 에피소드', body:'', updatedAt: nowISO() }); selectEpisode(id); }
+
+  function removeEpisode(id){ if(!confirm('에피소드를 삭제할까요? 되돌릴 수 없습니다.')) return; const idx=episodes.indexOf(id); if(idx>=0){ episodes.splice(idx,1); saveJSON(LIST_KEY, episodes); deleteEpisode(id); if(currentId===id){ currentId=episodes[0]||null; persistMeta(); } if(currentId){ loadCurrent(); } else { titleInput.value=''; bodyInput.value=''; previewTitle.textContent='(제목 없음)'; previewBody.textContent=''; charCountEl.textContent='0자'; renderEpList(); updateSystemBar(); } } }
+
+  function moveEpisode(id, dir){ const i=episodes.indexOf(id); if(i<0) return; const j=i+dir; if(j<0||j>=episodes.length) return; [episodes[i], episodes[j]] = [episodes[j], episodes[i]]; saveJSON(LIST_KEY, episodes); renderEpList(); }
+
+  // ======= 입력 =======
+  function onTitleInput(){ previewTitle.textContent = titleInput.value.trim() || '(제목 없음)'; markDirty(); instantSave(); }
+
+  let repaginateTimer = null;
+  function scheduleRepaginate(){
+    if(repaginateTimer) clearTimeout(repaginateTimer);
+    repaginateTimer = setTimeout(()=>{ pages = paginateByLayout(bodyInput.value); currentPageIndex = Math.min(currentPageIndex, pages.length-1); renderPage(); }, 120);
+  }
+
+  function onBodyInput(){
+    if(readMode==='page'){
+      scheduleRepaginate();
+    } else {
+      updateScrollPreviewToCaret();
+    }
+    charCountEl.textContent = bodyInput.value.length + '자';
+    markDirty();
+  }
+  function markDirty(){ dirty = true; saveStatus.textContent = '입력 중…'; }
+  function instantSave(){ saveEpisode({ id: currentId, title: titleInput.value, body: bodyInput.value, updatedAt: nowISO() }); dirty=false; saveStatus.textContent = '저장됨 • ' + new Date().toLocaleTimeString(); renderEpList(); }
+  function startAutosave(){ if(autosaveTimer) clearInterval(autosaveTimer); autosaveTimer = setInterval(()=>{ if(dirty) instantSave(); }, 10000); window.addEventListener('beforeunload', ()=>{ if(dirty) instantSave(); }); }
+
+  // ======= Export =======
+  function exportCurrent(){ const title=titleInput.value||'untitled'; const body=bodyInput.value||''; const header = `# ${title}
+
+`; const blob = new Blob([header+body], { type:'text/plain;charset=utf-8' }); const stamp = new Date().toISOString().slice(0,10).replaceAll('-',''); triggerDownload(blob, `${stamp}-EP${currentId}-${nameSafe(title)}.txt`); }
+  function exportAll(){ const lines = []; episodes.forEach(id=>{ const t=localStorage.getItem(K(id,'title'))||''; const b=localStorage.getItem(K(id,'body'))||''; const u=localStorage.getItem(K(id,'updatedAt'))||''; lines.push(`# ${t}
+(Updated: ${u})
+
+${b}
+
+---
+
+`); }); const blob = new Blob([lines.join('')], { type:'text/plain;charset=utf-8' }); const stamp = new Date().toISOString().slice(0,10).replaceAll('-',''); triggerDownload(blob, `${stamp}-ALL-episodes.txt`); }
+  function triggerDownload(blob, filename){ const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.style.display='none'; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },0); }
+
+  // ======= 테마 토글 =======
+  function setPreviewTheme(mode) {
+    if (mode === 'light') {
+      phoneFrame.classList.add('theme-light');
+      themeToggleBtn.textContent = '다크';
+      localStorage.setItem(PREFIX + 'previewTheme', 'light');
+    } else {
+      phoneFrame.classList.remove('theme-light');
+      themeToggleBtn.textContent = '라이트';
+      localStorage.setItem(PREFIX + 'previewTheme', 'dark');
+    }
+  }
+  // ======= 폰트 크기 변경 =======
+    function applyPreviewFont(px) {
+    // 1) 폰 내부 미리보기에 적용 (CSS 변수)
+    if (phoneFrame) {
+      phoneFrame.style.setProperty('--preview-font-size', px + 'px');
+    }
+
+    // 2) measurer에도 동일 적용 (페이지 모드 정확한 측정 일치)
+    if (measurer) {
+      measurer.style.fontSize = px + 'px';
+    }
+
+    // 3) 레이블 갱신 & 저장 (있을 때만)
+    if (fontLabel) {
+      fontLabel.textContent = px + 'px';
+    }
+    localStorage.setItem(FONT_KEY, String(px));
+
+    // 4) 페이지 모드면 재측정/재페이징 (치수 준비됐을 때만)
+    if (readMode === 'page' && pageHeightPx > 0 && contentWidthPx > 0 && measurer) {
+      updateMeasurerDimensions();
+      pages = paginateByLayout(bodyInput.value);
+      currentPageIndex = Math.min(currentPageIndex, pages.length - 1);
+      renderPage();
+    }
+  }
+
+  // ======= 모드 토글 & 초기화 =======
+  function setMode(mode){
+    readMode = mode;
+    modeToggleBtn.textContent = (readMode==='page' ? '페이지' : '스크롤');
+    if(readMode==='page'){
+      pages = paginateByLayout(bodyInput.value);
+      currentPageIndex = 0;
+      renderPage();
+    } else {
+      updateScrollPreviewToCaret();
+    }
+    updateSystemBar();
+  }
+
+  function init(){
+    // Theme init
+    const savedTheme = (localStorage.getItem(PREFIX + 'theme') || 'dark');
+    setPreviewTheme(savedTheme);
+
+    setupMeasurer();
+    ensureFirst();
+    renderEpList();
+    setMode('page'); // 기본값: 페이지 모드
+    if(currentId) loadCurrent();
+
+    titleInput.addEventListener('input', onTitleInput);
+    bodyInput.addEventListener('input', onBodyInput);
+    newEpBtn.addEventListener('click', addEpisode);
+    exportCurrentBtn.addEventListener('click', exportCurrent);
+    exportAllBtn.addEventListener('click', exportAll);
+    modeToggleBtn.addEventListener('click', ()=> setMode(readMode==='page' ? 'scroll' : 'page'));
+    themeToggleBtn.addEventListener('click', () => {
+      const isLight = phoneFrame.classList.contains('theme-light');
+      setPreviewTheme(isLight ? 'dark' : 'light');
+    });
+
+    fontDecBtn.addEventListener('click', () => {
+      previewFontPx = Math.max(FONT_MIN, previewFontPx - FONT_STEP);
+      applyPreviewFont(previewFontPx);
+    });
+
+    fontIncBtn.addEventListener('click', () => {
+      previewFontPx = Math.min(FONT_MAX, previewFontPx + FONT_STEP);
+      applyPreviewFont(previewFontPx);
+    });
+
+    // caret-aware sync in scroll mode
+    ['keyup','click','select'].forEach(evt=>{
+      bodyInput.addEventListener(evt, ()=>{ if(readMode==='scroll') updateScrollPreviewToCaret(); });
+    });
+
+    // Ctrl/Cmd+S => export current (fallback: save)
+    window.addEventListener('keydown', (e)=>{
+      const isSave = (e.key === 's' || e.key === 'S') && (e.ctrlKey || e.metaKey);
+      if(!isSave) return;
+      e.preventDefault();
+      try {
+        exportCurrent();
+        saveStatus.textContent = 'Export 시작';
+      } catch(err) {
+        instantSave();
+        saveStatus.textContent = '수동 저장됨 • ' + new Date().toLocaleTimeString();
+      }
+    });
+
+    // 컨테이너 리사이즈 시 재측정/재페이징
+    const ro = new ResizeObserver(()=>{ updateMeasurerDimensions(); if(readMode==='page') { pages = paginateByLayout(bodyInput.value); currentPageIndex = Math.min(currentPageIndex, pages.length-1); renderPage(); } });
+    ro.observe(phoneContent);
+
+    // 웹폰트가 있다면 폰트 로드 후 1회 보정
+    if(document.fonts && document.fonts.ready){ document.fonts.ready.then(()=>{ updateMeasurerDimensions(); if(readMode==='page'){ pages = paginateByLayout(bodyInput.value); renderPage(); } }); }
+
+    startAutosave();
+  }
+  init();
+</script>
+</body>
+</html>
